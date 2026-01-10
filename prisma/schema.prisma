@@ -1,0 +1,82 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+
+}
+
+datasource db {
+  provider = "postgresql"
+
+}
+
+
+enum HotelStatus {
+  STANDARD
+  PREFERRED
+}
+
+enum CommissionType {
+  PERCENTAGE
+  FLAT
+}
+
+enum BookingStatus {
+  PENDING
+  COMPLETED
+}
+
+model Hotel {
+  id        String   @id @default(uuid())
+  name      String
+  status    HotelStatus
+  agreements CommissionAgreement[]
+  bookings   Booking[]
+  createdAt DateTime @default(now())
+}
+
+model CommissionAgreement {
+  id             String   @id @default(uuid())
+  hotelId        String
+  type           CommissionType
+  baseRate       Decimal?
+  flatFee        Decimal?
+  preferredBonus Decimal?
+  validFrom      DateTime
+  validTo        DateTime?
+  tiers CommissionTier[]
+  hotel Hotel @relation(fields: [hotelId], references: [id])
+  @@index([hotelId, validFrom])
+}
+
+model CommissionTier {
+  id          String @id @default(uuid())
+  agreementId String
+  minBookings Int
+  bonusRate   Decimal
+  agreement CommissionAgreement @relation(fields: [agreementId], references: [id])
+}
+
+model Booking {
+  id          String   @id @default(uuid())
+  hotelId     String
+  amount      Decimal
+  status      BookingStatus
+  completedAt DateTime?
+  commission Commission?
+  hotel Hotel @relation(fields: [hotelId], references: [id])
+}
+
+model Commission {
+  id            String   @id @default(uuid())
+  bookingId     String   @unique
+  agreementId   String
+  amount        Decimal
+  breakdown     Json
+  calculatedAt DateTime @default(now())
+  booking Booking @relation(fields: [bookingId], references: [id])
+}
