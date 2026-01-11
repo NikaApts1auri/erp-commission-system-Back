@@ -1,10 +1,11 @@
 import {
-  IsString,
   IsEnum,
   IsOptional,
   IsNumber,
   ValidateNested,
   IsArray,
+  ArrayMinSize,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CommissionType } from '@prisma/client';
@@ -21,20 +22,22 @@ export class CreateAgreementDto {
   @IsEnum(CommissionType)
   type: CommissionType;
 
-  @IsOptional()
+  @ValidateIf((o) => o.type === CommissionType.PERCENTAGE)
   @IsNumber()
-  baseRate?: number; // percentage e.g., 0.1 = 10%
+  baseRate!: number;
 
-  @IsOptional()
+  @ValidateIf((o) => o.type === CommissionType.FLAT)
   @IsNumber()
-  flatFee?: number;
+  flatFee!: number;
 
   @IsOptional()
   @IsNumber()
   preferredBonus?: number;
 
+  @ValidateIf((o) => o.type === CommissionType.TIERED)
   @IsArray()
+  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => TierDto)
-  tiers: TierDto[];
+  tiers!: TierDto[];
 }

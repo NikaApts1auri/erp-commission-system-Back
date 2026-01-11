@@ -23,7 +23,9 @@ enum HotelStatus {
 enum CommissionType {
   PERCENTAGE
   FLAT
+  TIERED
 }
+
 
 enum BookingStatus {
   PENDING
@@ -67,6 +69,7 @@ model Booking {
   amount      Decimal
   status      BookingStatus
   completedAt DateTime?
+  createdAt   DateTime @default(now()) 
   commission Commission?
   hotel Hotel @relation(fields: [hotelId], references: [id])
 }
