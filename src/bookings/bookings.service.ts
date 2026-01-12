@@ -2,11 +2,15 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { BookingStatus } from '@prisma/client';
+import { CommissionsService } from '../commissions/commissions.service';
 
 @Injectable()
 export class BookingsService {
-  commissionsService: any;
-  constructor(private prisma: PrismaService) {}
+  service: { calculateCommission: jest.Mock };
+  constructor(
+    private prisma: PrismaService,
+    private commissionsService: CommissionsService,
+  ) {}
 
   // create booking
   async createBooking(hotelId: string, dto: CreateBookingDto) {

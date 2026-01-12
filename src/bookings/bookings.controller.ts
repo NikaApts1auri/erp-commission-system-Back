@@ -1,7 +1,7 @@
 import { Controller, Post, Patch, Get, Param, Body } from '@nestjs/common';
 import { BookingsService } from './bookings.service';
-import { CommissionsService } from '../commissions/commissions.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { CommissionsService } from '../commissions/commissions.service';
 
 @Controller('bookings')
 export class BookingsController {
