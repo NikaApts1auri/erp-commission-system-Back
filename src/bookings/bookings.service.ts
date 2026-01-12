@@ -5,6 +5,7 @@ import { BookingStatus } from '@prisma/client';
 
 @Injectable()
 export class BookingsService {
+  commissionsService: any;
   constructor(private prisma: PrismaService) {}
 
   // create booking
@@ -21,15 +22,17 @@ export class BookingsService {
 
   // complete booking
   async completeBooking(bookingId: string) {
-    const booking = await this.prisma.booking.findUnique({
+    const booking = await this.prisma.booking.update({
       where: { id: bookingId },
+      data: {
+        status: BookingStatus.COMPLETED,
+        completedAt: new Date(),
+      },
     });
-    if (!booking) throw new BadRequestException('Booking not found');
 
-    return this.prisma.booking.update({
-      where: { id: bookingId },
-      data: { status: BookingStatus.COMPLETED, completedAt: new Date() },
-    });
+    await this.commissionsService.calculateCommission(bookingId);
+
+    return booking;
   }
 
   // find booking by ID
