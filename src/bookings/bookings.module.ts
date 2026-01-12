@@ -7,6 +7,6 @@ import { CommissionsModule } from 'src/commissions/commissions.module';
 @Module({
   imports: [CommissionsModule],
   controllers: [BookingsController],
-  providers: [BookingsService, PrismaService],
+  providers: [BookingsService],
 })
 export class BookingsModule {}

@@ -6,7 +6,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 
 @Module({
   imports: [PrismaModule],
-  providers: [CommissionsService, PrismaService],
+  providers: [CommissionsService],
   controllers: [CommissionsController],
   exports: [CommissionsService],
 })
