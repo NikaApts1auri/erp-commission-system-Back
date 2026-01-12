@@ -10,12 +10,22 @@ import {
 import { Type } from 'class-transformer';
 import { CommissionType } from '@prisma/client';
 
+// აქ დავამატეთ bonusType
+export enum TierBonusType {
+  PERCENTAGE = 'PERCENTAGE',
+  FLAT = 'FLAT',
+}
+
 export class TierDto {
   @IsNumber()
   minBookings: number;
 
   @IsNumber()
   bonusRate: number;
+
+  @IsOptional()
+  @IsEnum(TierBonusType)
+  bonusType?: TierBonusType = TierBonusType.PERCENTAGE; // default
 }
 
 export class CreateAgreementDto {

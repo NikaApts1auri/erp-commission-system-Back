@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CommissionsController } from './commissions.controller';
 import { CommissionsService } from './commissions.service';
-import { Decimal } from '@prisma/client/runtime/wasm-compiler-edge';
 import { Response } from 'express';
 
 describe('CommissionsController', () => {
@@ -10,14 +9,13 @@ describe('CommissionsController', () => {
 
   beforeEach(async () => {
     service = {
-      calculateCommission: jest.fn().mockResolvedValue({
-        amount: new Decimal(120),
-        breakdown: {},
-      }),
+      // mock for summary
       summary: jest.fn().mockResolvedValue({}),
+      // mock for export
       export: jest
         .fn()
-        .mockResolvedValue('Hotel,BookingId,Amount,CalculatedAt\n'),
+        .mockResolvedValue('Hotel,BookingId,Amount,AppliedRate,CalculatedAt\n'),
+      // mock for agreement CRUD
       createAgreement: jest.fn().mockResolvedValue({}),
       getAgreement: jest.fn().mockResolvedValue({}),
       patchAgreement: jest.fn().mockResolvedValue({}),
@@ -31,25 +29,16 @@ describe('CommissionsController', () => {
     controller = module.get<CommissionsController>(CommissionsController);
   });
 
-  it('should calculate commission via controller', async () => {
-    const result = await controller.calculate('b1');
-
-    expect(result.amount.toNumber()).toBe(120);
-    expect(service.calculateCommission).toHaveBeenCalledWith('b1');
-  });
-
   it('should return summary via controller', async () => {
     const month = '2026-03';
     const result = await controller.summary(month);
 
-    expect(result).toEqual({});
     expect(service.summary).toHaveBeenCalledWith(month);
+    expect(result).toEqual({});
   });
 
   it('should return export CSV via controller', async () => {
     const month = '2026-03';
-
-    // mock express.Response
     const res: Partial<Response> = {
       setHeader: jest.fn(),
       send: jest.fn(),
@@ -57,13 +46,13 @@ describe('CommissionsController', () => {
 
     await controller.export(month, res as Response);
 
+    expect(service.export).toHaveBeenCalledWith(month);
     expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv');
     expect(res.setHeader).toHaveBeenCalledWith(
       'Content-Disposition',
       `attachment; filename="commissions-${month}.csv"`,
     );
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining('Hotel'));
-    expect(service.export).toHaveBeenCalledWith(month);
   });
 
   it('should create agreement via controller', async () => {

@@ -1,9 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CommissionsService } from './commissions.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { BookingStatus, CommissionType } from '@prisma/client';
-import { BadRequestException } from '@nestjs/common';
-import { Decimal } from '@prisma/client/runtime/index-browser';
+import { CommissionType, TierBonusType } from '@prisma/client';
 
 describe('CommissionsService', () => {
   let service: CommissionsService;
@@ -12,15 +10,13 @@ describe('CommissionsService', () => {
   beforeEach(async () => {
     // სრული mock Prisma
     prisma = {
-      booking: {
-        findUnique: jest.fn(),
-        count: jest.fn(),
-      },
       commissionAgreement: {
         findFirst: jest.fn(),
+        create: jest.fn(),
+        updateMany: jest.fn(),
       },
       commission: {
-        upsert: jest.fn(),
+        findMany: jest.fn(),
       },
     };
 
@@ -32,68 +28,122 @@ describe('CommissionsService', () => {
     }).compile();
 
     service = module.get<CommissionsService>(CommissionsService);
-
-    // სწრაფი mock-ი  calculation-ისთვის
-    jest
-      .spyOn(service, 'calculateCommission')
-      .mockImplementation(async (bookingId: string) => {
-        const amounts: Record<string, number> = {
-          b1: 100,
-          b2: 120,
-          b3: 200,
-          b4: 1100,
-          b6: 0,
-          b7: 100,
-        };
-
-        if (bookingId === 'b5') {
-          throw new BadRequestException('Booking not completed');
-        }
-
-        return {
-          id: `c-${bookingId}`,
-          bookingId,
-          agreementId: `a-${bookingId}`,
-          amount: new Decimal(amounts[bookingId] || 0),
-          breakdown: {},
-          calculatedAt: new Date(),
-        };
-      });
   });
 
-  it('calculates percentage commission correctly', async () => {
-    const result = await service.calculateCommission('b1');
-    expect(result.amount.toNumber()).toBe(100);
-  });
+  it('creates agreement correctly', async () => {
+    const hotelId = 'h1';
+    const dto = {
+      type: CommissionType.PERCENTAGE,
+      baseRate: 0.1,
+      preferredBonus: 0.05,
+    };
 
-  it('applies preferred bonus for preferred hotel', async () => {
-    const result = await service.calculateCommission('b2');
-    expect(result.amount.toNumber()).toBe(120);
-  });
+    prisma.commissionAgreement.create.mockResolvedValueOnce({
+      id: 'a1',
+      ...dto,
+      tiers: [],
+    });
 
-  it('applies flat commission correctly', async () => {
-    const result = await service.calculateCommission('b3');
-    expect(result.amount.toNumber()).toBe(200);
-  });
-
-  it('applies tiered bonus correctly based on monthly bookings', async () => {
-    const result = await service.calculateCommission('b4');
-    expect(result.amount.toNumber()).toBe(1100);
-  });
-
-  it('throws error if booking not completed', async () => {
-    await expect(service.calculateCommission('b5')).rejects.toThrow(
-      BadRequestException,
+    const result = await service.createAgreement(hotelId, dto as any);
+    expect(result.id).toBe('a1');
+    expect(prisma.commissionAgreement.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          hotelId,
+          type: dto.type,
+          baseRate: dto.baseRate,
+          preferredBonus: dto.preferredBonus,
+        }),
+        include: { tiers: true },
+      }),
     );
   });
 
-  it('returns zero commission if booking amount is zero', async () => {
-    const result = await service.calculateCommission('b6');
-    expect(result.amount.toNumber()).toBe(0);
+  it('gets agreement correctly', async () => {
+    const hotelId = 'h1';
+    prisma.commissionAgreement.findFirst.mockResolvedValueOnce({
+      id: 'a1',
+      hotelId,
+      type: CommissionType.FLAT,
+      flatFee: 50,
+      tiers: [],
+    });
+
+    const result = await service.getAgreement(hotelId);
+
+    expect(prisma.commissionAgreement.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { hotelId, validTo: null },
+        include: { tiers: true },
+      }),
+    );
   });
 
-  it('uses agreement valid at booking completion date (historical rate)', async () => {
-    const result = await service.calculateCommission('b7');
-    expect(result.amount.toNumber()).toBe(100);
+  it('patches agreement by creating a new one', async () => {
+    const hotelId = 'h1';
+    const dto = {
+      type: CommissionType.TIERED,
+      tiers: [
+        {
+          minBookings: 1,
+          bonusRate: 0.05,
+          bonusType: TierBonusType.PERCENTAGE,
+        },
+      ],
+    };
+
+    prisma.commissionAgreement.create.mockResolvedValueOnce({
+      id: 'a2',
+      ...dto,
+      tiers: dto.tiers,
+    });
+
+    const result = await service.patchAgreement(hotelId, dto as any);
+    expect(result.id).toBe('a2');
+  });
+
+  it('returns summary correctly', async () => {
+    const month = '2026-03';
+    const now = new Date();
+    prisma.commission.findMany.mockResolvedValueOnce([
+      {
+        amount: 100,
+        booking: { hotel: { name: 'Hotel A' } },
+      },
+      {
+        amount: 200,
+        booking: { hotel: { name: 'Hotel A' } },
+      },
+      {
+        amount: 50,
+        booking: { hotel: { name: 'Hotel B' } },
+      },
+    ]);
+
+    const result = await service.summary(month);
+    expect(result['Hotel A'].total).toBe(300);
+    expect(result['Hotel A'].bookings).toBe(2);
+    expect(result['Hotel B'].total).toBe(50);
+    expect(result['Hotel B'].bookings).toBe(1);
+  });
+
+  it('exports CSV correctly', async () => {
+    const month = '2026-03';
+    const now = new Date();
+    prisma.commission.findMany.mockResolvedValueOnce([
+      {
+        booking: { hotel: { name: 'Hotel A' } },
+        bookingId: 'b1',
+        amount: 100,
+        appliedRate: 0.1,
+        calculatedAt: now,
+      },
+    ]);
+
+    const csv = await service.export(month);
+    expect(csv).toContain('Hotel,BookingId,Amount,AppliedRate,CalculatedAt');
+    expect(csv).toContain('Hotel A');
+    expect(csv).toContain('b1');
+    expect(csv).toContain('0.1');
   });
 });

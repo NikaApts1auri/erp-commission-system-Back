@@ -6,14 +6,11 @@
 
 generator client {
   provider = "prisma-client-js"
-
 }
 
 datasource db {
   provider = "postgresql"
-
 }
-
 
 enum HotelStatus {
   STANDARD
@@ -26,6 +23,10 @@ enum CommissionType {
   TIERED
 }
 
+enum TierBonusType {
+  PERCENTAGE
+  FLAT
+}
 
 enum BookingStatus {
   PENDING
@@ -33,13 +34,15 @@ enum BookingStatus {
 }
 
 model Hotel {
-  id        String   @id @default(uuid())
-  name      String
-  status    HotelStatus
+  id         String   @id @default(uuid())
+  name       String
+  status     HotelStatus
   agreements CommissionAgreement[]
   bookings   Booking[]
-  createdAt DateTime @default(now())
+  isDeleted  Boolean  @default(false)
+  createdAt  DateTime @default(now())
 }
+
 
 model CommissionAgreement {
   id             String   @id @default(uuid())
@@ -50,8 +53,10 @@ model CommissionAgreement {
   preferredBonus Decimal?
   validFrom      DateTime
   validTo        DateTime?
-  tiers CommissionTier[]
+  tiers          CommissionTier[]
+
   hotel Hotel @relation(fields: [hotelId], references: [id])
+
   @@index([hotelId, validFrom])
 }
 
@@ -60,7 +65,11 @@ model CommissionTier {
   agreementId String
   minBookings Int
   bonusRate   Decimal
+  bonusType   TierBonusType
+
   agreement CommissionAgreement @relation(fields: [agreementId], references: [id])
+
+  @@index([agreementId, minBookings])
 }
 
 model Booking {
@@ -69,17 +78,24 @@ model Booking {
   amount      Decimal
   status      BookingStatus
   completedAt DateTime?
-  createdAt   DateTime @default(now()) 
+  createdAt   DateTime @default(now())
+
   commission Commission?
-  hotel Hotel @relation(fields: [hotelId], references: [id])
+  hotel      Hotel @relation(fields: [hotelId], references: [id])
+
+  @@index([hotelId, status, completedAt])
 }
 
 model Commission {
-  id            String   @id @default(uuid())
-  bookingId     String   @unique
-  agreementId   String
-  amount        Decimal
-  breakdown     Json
+  id           String   @id @default(uuid())
+  bookingId    String   @unique
+  agreementId  String
+  amount       Decimal
+  appliedRate  Decimal
+  breakdown    Json
   calculatedAt DateTime @default(now())
+
   booking Booking @relation(fields: [bookingId], references: [id])
+
+  @@index([calculatedAt])
 }

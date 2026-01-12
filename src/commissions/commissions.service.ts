@@ -6,27 +6,28 @@ import { Prisma, CommissionType } from '@prisma/client';
 
 @Injectable()
 export class CommissionsService {
+  [x: string]: any;
   constructor(private prisma: PrismaService) {}
 
   // ===== Agreement CRUD =====
   async createAgreement(hotelId: string, dto: CreateAgreementDto) {
-    console.log(dto);
-
+    // მოძველებული შეთანხმების ვადის დასრულება
     await this.prisma.commissionAgreement.updateMany({
       where: { hotelId, validTo: null },
       data: { validTo: new Date() },
     });
 
-    // Basic validation
+    // Validation
     if (dto.type === CommissionType.PERCENTAGE && dto.baseRate == null) {
       throw new BadRequestException('baseRate required for PERCENTAGE');
     }
-
     if (dto.type === CommissionType.FLAT && dto.flatFee == null) {
       throw new BadRequestException('flatFee required for FLAT');
     }
-
-    if (dto.type === CommissionType.TIERED && !dto.tiers?.length) {
+    if (
+      dto.type === CommissionType.TIERED &&
+      (!dto.tiers || dto.tiers.length === 0)
+    ) {
       throw new BadRequestException('tiers required for TIERED');
     }
 
@@ -36,10 +37,18 @@ export class CommissionsService {
         type: dto.type,
         baseRate: dto.type === CommissionType.PERCENTAGE ? dto.baseRate : null,
         flatFee: dto.type === CommissionType.FLAT ? dto.flatFee : null,
-        preferredBonus: dto.preferredBonus ?? null,
+        preferredBonus: dto.preferredBonus ?? 0,
         validFrom: new Date(),
         ...(dto.type === CommissionType.TIERED
-          ? { tiers: { create: dto.tiers! } }
+          ? {
+              tiers: {
+                create: dto.tiers.map((t) => ({
+                  minBookings: t.minBookings,
+                  bonusRate: t.bonusRate,
+                  bonusType: t.bonusType ?? 'PERCENTAGE', // required
+                })),
+              },
+            }
           : {}),
       },
       include: { tiers: true },
@@ -57,90 +66,13 @@ export class CommissionsService {
     return this.createAgreement(hotelId, dto);
   }
 
-  // ===== Commission Calculation =====
-  async calculateCommission(bookingId: string) {
-    const booking = await this.prisma.booking.findUnique({
-      where: { id: bookingId },
-      include: { hotel: true },
-    });
-
-    if (!booking || booking.status !== 'COMPLETED' || !booking.completedAt) {
-      throw new BadRequestException('Booking not completed');
-    }
-
-    const agreement = await this.prisma.commissionAgreement.findFirst({
-      where: {
-        hotelId: booking.hotelId,
-        validFrom: { lte: booking.completedAt },
-        OR: [{ validTo: null }, { validTo: { gte: booking.completedAt } }],
-      },
-      include: { tiers: true },
-    });
-
-    if (!agreement) throw new BadRequestException('No agreement found');
-
-    let amount = new Prisma.Decimal(0);
-    const breakdown: Prisma.JsonObject = {};
-
-    if (agreement.type === CommissionType.PERCENTAGE) {
-      amount = new Prisma.Decimal(booking.amount).mul(agreement.baseRate!);
-      breakdown.baseRate = Number(agreement.baseRate ?? 0);
-    }
-
-    if (agreement.type === CommissionType.FLAT) {
-      amount = new Prisma.Decimal(agreement.flatFee!);
-      breakdown.flatFee = Number(agreement.flatFee ?? 0);
-    }
-
-    if (booking.hotel.status === 'PREFERRED' && agreement.preferredBonus) {
-      const bonus = new Prisma.Decimal(booking.amount).mul(
-        agreement.preferredBonus,
-      );
-      amount = amount.add(bonus);
-      breakdown.preferredBonus = Number(agreement.preferredBonus ?? 0);
-    }
-
-    if (agreement.type === CommissionType.TIERED) {
-      const monthStart = startOfMonth(booking.completedAt);
-      const monthEnd = endOfMonth(booking.completedAt);
-
-      const monthlyCount = await this.prisma.booking.count({
-        where: {
-          hotelId: booking.hotelId,
-          status: 'COMPLETED',
-          completedAt: { gte: monthStart, lte: monthEnd },
-        },
-      });
-
-      const tier = agreement.tiers
-        .filter((t) => monthlyCount >= t.minBookings)
-        .sort((a, b) => b.minBookings - a.minBookings)[0];
-
-      if (tier) {
-        const tierBonus = new Prisma.Decimal(booking.amount).mul(
-          tier.bonusRate,
-        );
-        amount = amount.add(tierBonus);
-        breakdown.tierBonus = Number(tier.bonusRate);
-      }
-    }
-
-    return this.prisma.commission.upsert({
-      where: { bookingId }, // check by bookingId
-      update: { amount, breakdown, calculatedAt: new Date() },
-      create: { bookingId, agreementId: agreement.id, amount, breakdown },
-    });
-  }
-
   // ===== Monthly Summary =====
   async summary(month: string) {
     const start = new Date(`${month}-01T00:00:00.000Z`);
     const end = endOfMonth(start);
 
     const commissions = await this.prisma.commission.findMany({
-      where: {
-        calculatedAt: { gte: start, lte: end },
-      },
+      where: { calculatedAt: { gte: start, lte: end } },
       include: { booking: { include: { hotel: true } } },
     });
 
@@ -155,7 +87,8 @@ export class CommissionsService {
 
     return result;
   }
-  ///export
+
+  // ===== CSV Export =====
   async export(month: string) {
     const start = new Date(`${month}-01T00:00:00.000Z`);
     const end = endOfMonth(start);
@@ -166,12 +99,13 @@ export class CommissionsService {
     });
 
     const rows = [
-      'Hotel,BookingId,Amount,CalculatedAt',
+      'Hotel,BookingId,Amount,AppliedRate,CalculatedAt',
       ...commissions.map((c) =>
         [
           c.booking.hotel.name,
           c.bookingId,
           c.amount,
+          c.appliedRate,
           c.calculatedAt.toISOString(),
         ].join(','),
       ),

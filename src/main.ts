@@ -42,16 +42,15 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   // ===== Graceful shutdown =====
-  const server = app.getHttpServer();
-
   const shutdown = async () => {
     await app.close();
     process.exit(0);
   };
 
-  process.on('SIGTERM', shutdown); //როცა დოკერი ჩერდებ
+  process.on('SIGTERM', shutdown); // როცა დოკერი ჩერდება
   process.on('SIGINT', shutdown);
 
   await app.listen(process.env.PORT ?? 3000);
 }
+
 bootstrap();

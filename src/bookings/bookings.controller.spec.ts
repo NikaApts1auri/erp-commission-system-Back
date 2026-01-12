@@ -1,97 +1,70 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
-import { CommissionsService } from '../commissions/commissions.service';
+import { CreateBookingDto } from './dto/create-booking.dto';
 import { BookingStatus } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/wasm-compiler-edge';
 
 describe('BookingsController', () => {
   let controller: BookingsController;
-  let bookingsService: Partial<BookingsService>;
-  let commissionsService: Partial<CommissionsService>;
+  let service: Partial<BookingsService>;
 
   beforeEach(async () => {
-    bookingsService = {
-      createBooking: jest.fn(),
-      completeBooking: jest.fn(),
-      findBooking: jest.fn(),
-      listHotelBookings: jest.fn(),
-    };
-
-    commissionsService = {
-      calculateCommission: jest.fn(),
+    service = {
+      createBooking: jest
+        .fn()
+        .mockImplementation((hotelId, dto: CreateBookingDto) => ({
+          id: 'b1',
+          hotelId,
+          ...dto,
+          status: dto.status ?? BookingStatus.PENDING,
+        })),
+      completeBooking: jest
+        .fn()
+        .mockResolvedValue({ id: 'b1', status: BookingStatus.COMPLETED }),
+      findBooking: jest.fn().mockResolvedValue({ id: 'b1', amount: 100 }),
+      listHotelBookings: jest
+        .fn()
+        .mockResolvedValue([{ id: 'b1', amount: 100 }]),
+      calculateCommission: jest
+        .fn()
+        .mockResolvedValue({ bookingId: 'b1', amount: new Decimal(50) }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [BookingsController],
-      providers: [
-        { provide: BookingsService, useValue: bookingsService },
-        { provide: CommissionsService, useValue: commissionsService },
-      ],
+      providers: [{ provide: BookingsService, useValue: service }],
     }).compile();
 
     controller = module.get<BookingsController>(BookingsController);
   });
 
-  it('should create a booking', async () => {
-    (bookingsService.createBooking as jest.Mock).mockResolvedValue({
-      id: 'b1',
-      amount: 1000,
-      status: BookingStatus.PENDING,
-    });
-
-    const dto = { amount: 1000 };
+  it('should create booking via controller', async () => {
+    const dto: CreateBookingDto = { amount: 100 };
     const result = await controller.createBooking('h1', dto);
-
+    expect(service.createBooking).toHaveBeenCalledWith('h1', dto);
     expect(result.id).toBe('b1');
-    expect(bookingsService.createBooking).toHaveBeenCalledWith('h1', dto);
   });
 
-  it('should complete a booking', async () => {
-    (bookingsService.completeBooking as jest.Mock).mockResolvedValue({
-      id: 'b2',
-      status: BookingStatus.COMPLETED,
-    });
-
-    const result = await controller.completeBooking('b2');
-
-    expect(result.status).toBe(BookingStatus.COMPLETED);
-    expect(bookingsService.completeBooking).toHaveBeenCalledWith('b2');
+  it('should complete booking via controller', async () => {
+    const result = await controller.completeBooking('b1');
+    expect(service.completeBooking).toHaveBeenCalledWith('b1');
   });
 
-  it('should find a booking', async () => {
-    (bookingsService.findBooking as jest.Mock).mockResolvedValue({
-      id: 'b3',
-      hotel: { id: 'h3', name: 'Test Hotel' },
-      commission: { amount: 100 },
-    });
-
-    const result = await controller.findBooking('b3');
-
-    expect(result?.hotel.name).toBe('Test Hotel');
-    expect(bookingsService.findBooking).toHaveBeenCalledWith('b3');
+  it('should find booking via controller', async () => {
+    const result = await controller.findBooking('b1');
+    expect(service.findBooking).toHaveBeenCalledWith('b1');
   });
 
-  it('should list bookings for a hotel', async () => {
-    (bookingsService.listHotelBookings as jest.Mock).mockResolvedValue([
-      { id: 'b4' },
-      { id: 'b5' },
-    ]);
-
-    const result = await controller.listHotelBookings('h4');
-
-    expect(result.length).toBe(2);
-    expect(bookingsService.listHotelBookings).toHaveBeenCalledWith('h4');
+  it('should list hotel bookings via controller', async () => {
+    const result = await controller.listHotelBookings('h1');
+    expect(service.listHotelBookings).toHaveBeenCalledWith('h1');
+    expect(result.length).toBe(1);
   });
 
   it('should calculate commission via controller', async () => {
-    (commissionsService.calculateCommission as jest.Mock).mockResolvedValue({
-      amount: 120,
-      breakdown: {},
-    });
-
-    const result = await controller.calculateCommission('b6');
-
-    expect(result.amount).toBe(120);
-    expect(commissionsService.calculateCommission).toHaveBeenCalledWith('b6');
+    const result = await controller.calculateCommission('b1');
+    expect(service.calculateCommission).toHaveBeenCalledWith('b1');
+    expect(result.amount.toNumber()).toBe(50);
   });
 });
